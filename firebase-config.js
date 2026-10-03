@@ -1,7 +1,6 @@
 // عبي البيانات دي من صفحة إعدادات مشروعك في Firebase Console
 // Project settings -> General -> Your apps -> SDK setup and configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyBvgeR_5gRdRliMgcHqeZjOqPPEoD2V4T4",
   authDomain: "ps-repair.firebaseapp.com",
   projectId: "ps-repair",
