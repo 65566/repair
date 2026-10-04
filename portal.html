@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>متابعة أجهزتك - The First</title>
+<style>
+  body{margin:0;background:#f6f7f9;color:#1a1d23;font-family:-apple-system,Segoe UI,Tahoma,Arial,sans-serif;}
+  header{padding:16px;text-align:center;background:#fff;border-bottom:1px solid #e5e7eb;}
+  header h1{font-size:18px;margin:0 0 4px;}
+  header a{font-size:13px;color:#2563eb;text-decoration:none;}
+  main{max-width:520px;margin:0 auto;padding:16px;}
+  .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin-bottom:14px;}
+  label{display:block;font-size:13px;color:#6b7280;margin:10px 0 4px;}
+  input{width:100%;padding:10px;border-radius:8px;border:1px solid #e5e7eb;font-size:15px;box-sizing:border-box;}
+  button{width:100%;margin-top:14px;padding:12px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:15px;font-weight:600;cursor:pointer;}
+  .msg{font-size:13px;margin-top:8px;text-align:center;}
+  .msg.bad{color:#dc2626;}
+  .hint{font-size:12px;color:#6b7280;text-align:center;margin-top:8px;}
+  .device{border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin-top:10px;background:#fff;}
+  .device h3{margin:0 0 6px;font-size:16px;}
+  .row{font-size:14px;margin:4px 0;}
+  .row b{color:#6b7280;font-weight:500;}
+  .photos{display:flex;gap:8px;overflow-x:auto;margin-top:8px;}
+  .photos img{width:90px;height:90px;object-fit:cover;border-radius:8px;flex:none;}
+  .hidden{display:none;}
+</style>
+</head>
+<body>
+<header>
+  <h1>متابعة أجهزتك</h1>
+  <a href="index.html">الرجوع للصفحة الرئيسية</a>
+</header>
+<main>
+
+<section id="loginBox" class="card">
+  <label>رقم هاتفك المسجل عندنا</label>
+  <input id="phone" placeholder="01xxxxxxxxx">
+  <label>كود أي جهاز ليك عندنا (للتأكيد)</label>
+  <input id="code" placeholder="مثال: PS5-0231">
+  <button id="btnEnter">دخول</button>
+  <div class="msg" id="loginMsg"></div>
+  <div class="hint">بندخل الكود مرة واحدة للتأكد إن الرقم فعلاً بتاعك، وبعدها هتشوف كل أجهزتك.</div>
+</section>
+
+<section id="resultsBox" class="hidden">
+  <div id="results"></div>
+</section>
+
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import { getFirestore, doc, getDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+function esc(s){ return (s||"").toString().replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function renderDevice(d){
+  const photos = (d.photos||[]).map(url=>`<img src="${url}">`).join("");
+  return `<div class="device">
+    <h3>كود: ${esc(d.code)}</h3>
+    ${d.status?`<div class="row"><b>الحالة:</b> ${esc(d.status)}</div>`:""}
+    ${d.problem?`<div class="row"><b>المشكلة:</b> ${esc(d.problem)}</div>`:""}
+    ${d.diagnosis?`<div class="row"><b>التشخيص:</b> ${esc(d.diagnosis)}</div>`:""}
+    ${d.cost?`<div class="row"><b>التكلفة:</b> ${esc(d.cost)}</div>`:""}
+    ${d.warranty?`<div class="row"><b>الضمان:</b> ${esc(d.warranty)}</div>`:""}
+    ${d.notes?`<div class="row"><b>ملاحظات:</b> ${esc(d.notes)}</div>`:""}
+    ${photos?`<div class="photos">${photos}</div>`:""}
+  </div>`;
+}
+
+document.getElementById("btnEnter").addEventListener("click", async ()=>{
+  const msg = document.getElementById("loginMsg");
+  msg.textContent = ""; msg.className = "msg";
+  const phone = document.getElementById("phone").value.trim();
+  const code = document.getElementById("code").value.trim();
+  if(!phone || !code){ msg.textContent="اكتب رقم الهاتف والكود."; msg.className="msg bad"; return; }
+  try{
+    const snap = await getDoc(doc(db,"devices",code));
+    if(!snap.exists() || snap.data().clientPhone !== phone){
+      msg.textContent = "البيانات غير مطابقة، تأكد من الرقم والكود.";
+      msg.className = "msg bad";
+      return;
+    }
+    const q = query(collection(db,"devices"), where("clientPhone","==",phone));
+    const snaps = await getDocs(q);
+    document.getElementById("results").innerHTML = snaps.docs.map(d=>renderDevice(d.data())).join("");
+    document.getElementById("loginBox").classList.add("hidden");
+    document.getElementById("resultsBox").classList.remove("hidden");
+  }catch(e){
+    msg.textContent = "حدث خطأ، حاول تاني."; msg.className = "msg bad";
+    console.error(e);
+  }
+});
+</script>
+</body>
+</html>
