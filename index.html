@@ -184,6 +184,7 @@ table th{color:var(--muted);font-weight:700;background:#fffaf0;}
 
   <div id="saveNewBox" class="card hidden">
     <button class="primary" id="btnSaveNew">حفظ كل الأجهزة</button>
+    <button class="primary ghost" style="border-color:#25D366;color:#128C3E;" id="btnWhatsapp">📲 إرسال رسالة واتساب للعميل</button>
     <div class="msg" id="saveNewMsg"></div>
   </div>
 </section>
@@ -707,10 +708,50 @@ document.getElementById("btnSaveNew").addEventListener("click", async ()=>{
       }, {merge:true});
     }
     msg.textContent="تم حفظ كل الأجهزة بنجاح ✔"; msg.className="msg ok";
+    lastWhatsapp = buildWhatsappMessage(); // نحتفظ برسالة واتساب جاهزة حتى بعد تصفير الفورم
     newRowsState = []; renderNewRows();
     document.getElementById("custName").value=""; document.getElementById("custPhone").value="";
     shippingInfo = { address:"", file:null, preview:null };
   }catch(e){ msg.textContent="حصل خطأ أثناء الحفظ."; msg.className="msg bad"; console.error(e); }
+});
+
+// ---------- رسالة واتساب للعميل بتفاصيل الاستلام ----------
+let lastWhatsapp = null;
+function toWhatsAppPhone(p){
+  let d = (p||"").replace(/\D/g,"");
+  if(d.startsWith("0")) d = "20"+d.slice(1);
+  else if(!d.startsWith("20")) d = "20"+d;
+  return d;
+}
+function arabicDateToday(){
+  const d = new Date();
+  return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear();
+}
+function buildWhatsappMessage(){
+  const name = document.getElementById("custName").value.trim();
+  const phone = document.getElementById("custPhone").value.trim();
+  if(!name || !phone || newRowsState.length===0) return null;
+  const receiveType = document.querySelector('[data-toggle="receiveType"] .selected').dataset.val;
+  const address = (receiveType==="شحن" && shippingInfo.address) ? shippingInfo.address : "استلام من الفرع";
+  const counts = {};
+  newRowsState.forEach(r=>{ counts[r.model] = (counts[r.model]||0)+1; });
+  const modelSummary = Object.entries(counts).map(([m,c])=> `${c} ${m}`).join(" ، ");
+  const message =
+`اهلا ومرحبا بكم في خدمه مركز فرست لصيانه 🌹 البلايستيشن
+بيانات العميل :
+الاسم : ${name}
+فون : ${phone}
+عنوان : ${address}
+تم استلام اليوم بتاريخ : ${arabicDateToday()}
+${newRowsState.length} جهاز ( ${modelSummary} )
+وسيتم اختيار الاجهزه ثم فحص جهاز/اجهزه و نعود للتواصل معكم مره اخري
+شكرا لتعاملكم معنا🌹`;
+  return { phone, message };
+}
+document.getElementById("btnWhatsapp").addEventListener("click", ()=>{
+  const data = newRowsState.length>0 ? buildWhatsappMessage() : lastWhatsapp;
+  if(!data){ alert("اكتب اسم العميل ورقم تليفونه وسجّل جهاز واحد على الأقل أولاً."); return; }
+  window.open(`https://wa.me/${toWhatsAppPhone(data.phone)}?text=${encodeURIComponent(data.message)}`, "_blank");
 });
 
 // ---------- عرض تفاصيل جهاز (قراءة فقط) ----------
@@ -751,13 +792,22 @@ async function loadInvoices(filterVal){
       const snaps = await getDocs(collection(db,"devices"));
       devices = snaps.docs.map(d=>d.data()).sort((a,b)=>b.createdAt-a.createdAt).slice(0,100);
     }
-    list.innerHTML = devices.length ? `<div class="table-wrap"><table><thead><tr><th>كود</th><th>العميل</th><th>التكلفة</th><th>المدفوع</th><th>الحالة</th><th></th></tr></thead><tbody>
-      ${devices.map(d=>`<tr><td>${d.code}</td><td>${esc(d.customerName)}</td><td>${d.cost||0}</td><td>${d.paid||0}</td><td><span class="status-badge" style="background:${STATUS_COLORS[d.status]||'#64748b'};color:#fff;">${esc(d.status)}</span></td><td><button class="pill-btn" data-editcode="${d.code}">تعديل</button></td></tr>`).join("")}
+    list.innerHTML = devices.length ? `<div class="table-wrap"><table><thead><tr><th>كود</th><th>العميل</th><th>التكلفة</th><th>المدفوع</th><th>الحالة</th><th></th><th></th></tr></thead><tbody>
+      ${devices.map(d=>`<tr><td>${d.code}</td><td>${esc(d.customerName)}</td><td>${d.cost||0}</td><td>${d.paid||0}</td><td><span class="status-badge" style="background:${STATUS_COLORS[d.status]||'#64748b'};color:#fff;">${esc(d.status)}</span></td><td><button class="pill-btn" data-editcode="${d.code}">تعديل</button></td><td><button class="pill-btn danger" style="color:#fff;" data-delcode="${d.code}">حذف</button></td></tr>`).join("")}
       </tbody></table></div>` : `<div class="hint" style="padding:16px;">مفيش فواتير.</div>`;
     list.querySelectorAll("[data-editcode]").forEach(b=>b.addEventListener("click", ()=> openEditModal(b.dataset.editcode)));
+    list.querySelectorAll("[data-delcode]").forEach(b=>b.addEventListener("click", ()=> deleteInvoice(b.dataset.delcode, filterVal)));
   }catch(e){ list.innerHTML = `<div class="hint" style="padding:16px;">حصل خطأ.</div>`; console.error(e); }
 }
 document.getElementById("btnInvSearch").addEventListener("click", ()=> loadInvoices(document.getElementById("invSearch").value.trim()));
+
+async function deleteInvoice(code, filterVal){
+  if(!confirm(`متأكد عايز تحذف الفاتورة/الجهاز بكود ${code} نهائيًا؟ الخطوة دي مش قابلة للتراجع.`)) return;
+  try{
+    await deleteDoc(doc(db,"devices",code));
+    loadInvoices(filterVal);
+  }catch(e){ alert("حصل خطأ أثناء الحذف."); console.error(e); }
+}
 
 async function openEditModal(code){
   const snap = await getDoc(doc(db,"devices",code));
@@ -782,6 +832,7 @@ async function openEditModal(code){
       <input type="file" accept="image/*" capture="environment" class="hidden" id="em_cam_input">
       <input type="file" accept="image/*" multiple class="hidden" id="em_upload_input">
       <button class="primary" id="em_save">حفظ التعديل</button>
+      <button class="primary danger" style="color:#fff;" id="em_delete">🗑️ حذف هذه الفاتورة نهائيًا</button>
       <div class="msg" id="em_msg"></div>`);
     document.getElementById("em_model").addEventListener("change", e=> editState.model=e.target.value);
     document.getElementById("em_cost").addEventListener("input", e=> editState.cost=e.target.value);
@@ -808,6 +859,15 @@ async function openEditModal(code){
         msg.textContent="تم الحفظ ✔"; msg.className="msg ok";
         setTimeout(()=>{ closeModal(); loadInvoices(); }, 600);
       }catch(err){ msg.textContent="حصل خطأ."; msg.className="msg bad"; console.error(err); }
+    });
+    document.getElementById("em_delete").addEventListener("click", async ()=>{
+      if(!confirm(`متأكد عايز تحذف الفاتورة/الجهاز بكود ${esc(code)} نهائيًا؟ الخطوة دي مش قابلة للتراجع.`)) return;
+      const msg = document.getElementById("em_msg");
+      try{
+        await deleteDoc(doc(db,"devices",code));
+        closeModal();
+        loadInvoices();
+      }catch(err){ msg.textContent="حصل خطأ أثناء الحذف."; msg.className="msg bad"; console.error(err); }
     });
   }
   paint();
